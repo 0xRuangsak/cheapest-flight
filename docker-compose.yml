@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  # Go Backend Service
+  backend:
+    build:
+      context: .
+      target: backend-builder
+    ports:
+      - "8080:8080"
+    environment:
+      - AMADEUS_API_KEY=${AMADEUS_API_KEY}
+      - AMADEUS_API_SECRET=${AMADEUS_API_SECRET}
+      - AMADEUS_BASE_URL=${AMADEUS_BASE_URL}
+      - ENVIRONMENT=${ENVIRONMENT}
+      - PORT=8080
+    volumes:
+      - ./apps/backend:/app
+      - /app/vendor
+    working_dir: /app
+    command: go run main.go
+    depends_on:
+      - frontend
+    
+  # Next.js Frontend Service  
+  frontend:
+    build:
+      context: .
+      target: frontend-builder
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    volumes:
+      - ./apps/frontend:/app/apps/frontend
+      - /app/apps/frontend/node_modules
+      - /app/apps/frontend/.next
+    working_dir: /app
+    command: npm run dev --workspace=frontend
+
+  # Development Tools Container
+  dev-tools:
+    image: node:20-alpine
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: sleep infinity
+    profiles:
+      - tools
