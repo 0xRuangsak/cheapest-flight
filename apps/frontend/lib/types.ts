@@ -37,6 +37,13 @@ export interface SearchFormData {
   passengers: number;
 }
 
+export interface SearchFormErrors {
+  origin?: string;
+  destination?: string;
+  date?: string;
+  passengers?: string;
+}
+
 export interface SearchState {
   isLoading: boolean;
   results: Flight[] | null;

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import AirportInput from "./AirportInput";
-import { SearchFormData } from "@/lib/types";
+import { SearchFormData, SearchFormErrors } from "@/lib/types";
 
 interface FlightSearchFormProps {
   onSearch: (formData: SearchFormData) => void;
@@ -20,7 +20,7 @@ export default function FlightSearchForm({
     passengers: 1,
   });
 
-  const [errors, setErrors] = useState<Partial<SearchFormData>>({});
+  const [errors, setErrors] = useState<SearchFormErrors>({});
 
   // Get tomorrow's date as minimum date
   const getTomorrowDate = () => {
@@ -30,7 +30,7 @@ export default function FlightSearchForm({
   };
 
   const validateForm = (): boolean => {
-    const newErrors: Partial<SearchFormData> = {};
+    const newErrors: SearchFormErrors = {};
 
     if (!formData.origin || formData.origin.length !== 3) {
       newErrors.origin = "Please enter a valid 3-letter airport code";
