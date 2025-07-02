@@ -1,30 +1,36 @@
 # Multi-stage Dockerfile for Go backend + Next.js frontend
 
-# Stage 1: Node.js for Turborepo and Next.js
-FROM node:20-alpine AS frontend-builder
+# Stage 1: Node.js for Next.js frontend
+FROM node:20-alpine AS frontend-base
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-COPY turbo.json ./
+# Copy root package files for turborepo
+COPY package*.json turbo.json ./
+
+# Copy frontend package files
 COPY apps/frontend/package*.json ./apps/frontend/
 
-# Install dependencies
+# Install all dependencies
 RUN npm install
 
 # Copy frontend source
 COPY apps/frontend ./apps/frontend
-COPY packages ./packages
 
-# Build frontend
+# Stage 2: Frontend builder
+FROM frontend-base AS frontend-builder
 RUN npm run build --workspace=frontend
 
-# Stage 2: Go backend builder
-FROM golang:1.21-alpine AS backend-builder
+# Stage 3: Frontend development
+FROM frontend-base AS frontend-dev
+EXPOSE 3000
+CMD ["npm", "run", "dev", "--workspace=frontend"]
+
+# Stage 4: Go backend base
+FROM golang:1.21-alpine AS backend-base
 WORKDIR /app
 
 # Install dependencies
-RUN apk add --no-cache git
+RUN apk add --no-cache git ca-certificates
 
 # Copy go mod files
 COPY apps/backend/go.mod apps/backend/go.sum ./
@@ -33,24 +39,25 @@ RUN go mod download
 # Copy backend source
 COPY apps/backend ./
 
-# Build backend
+# Stage 5: Backend builder
+FROM backend-base AS backend-builder
 RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
-# Stage 3: Final runtime image
-FROM alpine:latest
+# Stage 6: Backend development
+FROM backend-base AS backend-dev
+EXPOSE 8080
+CMD ["go", "run", "main.go"]
+
+# Stage 7: Production backend
+FROM alpine:latest AS backend-prod
 WORKDIR /app
-
-# Install ca-certificates for HTTPS requests
 RUN apk --no-cache add ca-certificates
+COPY --from=backend-builder /app/main ./
+EXPOSE 8080
+CMD ["./main"]
 
-# Copy built binaries
-COPY --from=backend-builder /app/main ./backend
-COPY --from=frontend-builder /app/apps/frontend/.next ./frontend/.next
-COPY --from=frontend-builder /app/apps/frontend/public ./frontend/public
-COPY --from=frontend-builder /app/apps/frontend/package.json ./frontend/
-
-# Expose ports
-EXPOSE 8080 3000
-
-# Start both services (we'll use docker-compose for this)
-CMD ["./backend"]
+# Stage 8: Production frontend (nginx)
+FROM nginx:alpine AS frontend-prod
+COPY --from=frontend-builder /app/apps/frontend/.next /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
