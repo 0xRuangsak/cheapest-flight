@@ -26,7 +26,7 @@ EXPOSE 3000
 CMD ["npm", "run", "dev", "--workspace=frontend"]
 
 # Stage 4: Go backend base
-FROM golang:1.21-alpine AS backend-base
+FROM golang:1.24-alpine AS backend-base
 WORKDIR /app
 
 # Install dependencies
