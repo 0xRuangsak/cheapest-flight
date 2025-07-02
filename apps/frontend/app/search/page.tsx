@@ -83,27 +83,6 @@ export default function SearchPage() {
                 Cheapest Flight Finder
               </h1>
             </div>
-
-            <nav className="hidden md:flex space-x-6">
-              <a
-                href="#"
-                className="text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                How it works
-              </a>
-              <a
-                href="#"
-                className="text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                About
-              </a>
-              <a
-                href="#"
-                className="text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                Contact
-              </a>
-            </nav>
           </div>
         </div>
       </div>
