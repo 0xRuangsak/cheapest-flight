@@ -35,11 +35,12 @@ func main() {
 
 	// Initialize services
 	amadeusService := services.NewAmadeusService(cfg.AmadeusBaseURL, cfg.AmadeusAPIKey, cfg.AmadeusAPISecret)
+	airportService := services.NewAirportService()
 	routeOptimizer := services.NewRouteOptimizer(amadeusService)
 
 	// Initialize handlers
 	healthHandler := handlers.NewHealthHandler(Version)
-	flightHandler := handlers.NewFlightSearchHandler(routeOptimizer, amadeusService)
+	flightHandler := handlers.NewFlightSearchHandler(routeOptimizer, amadeusService, airportService)
 
 	// Create router
 	r := mux.NewRouter()
@@ -114,6 +115,10 @@ func main() {
 		} else {
 			log.Printf("Amadeus API connection successful")
 		}
+
+		// Log airport service status
+		airports := airportService.GetAllAirports()
+		log.Printf("Airport service loaded with %d airports", len(airports))
 	}()
 
 	// Wait for interrupt signal
