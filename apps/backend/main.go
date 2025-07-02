@@ -1,140 +1,132 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+
+	"cheapest-flight-backend/config"
+	"cheapest-flight-backend/handlers"
+	"cheapest-flight-backend/services"
 )
 
-type FlightSearchRequest struct {
-	Origin      string `json:"origin"`
-	Destination string `json:"destination"`
-	Date        string `json:"date"`
-	Passengers  int    `json:"passengers"`
-}
-
-type FlightSearchResponse struct {
-	Flights []Flight `json:"flights"`
-	Message string   `json:"message,omitempty"`
-}
-
-type Flight struct {
-	ID          string   `json:"id"`
-	Origin      string   `json:"origin"`
-	Destination string   `json:"destination"`
-	Date        string   `json:"date"`
-	Price       float64  `json:"price"`
-	Currency    string   `json:"currency"`
-	Airline     string   `json:"airline"`
-	Duration    string   `json:"duration"`
-	Stops       int      `json:"stops"`
-	Route       []string `json:"route"`
-}
-
-type AmadeusClient struct {
-	APIKey    string
-	APISecret string
-	BaseURL   string
-	Token     string
-}
+const (
+	Version = "2.0.0"
+)
 
 func main() {
-	// Get environment variables
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	apiKey := os.Getenv("AMADEUS_API_KEY")
-	apiSecret := os.Getenv("AMADEUS_API_SECRET")
-	baseURL := os.Getenv("AMADEUS_BASE_URL")
+	log.Printf("Starting Cheapest Flight Backend v%s", Version)
+	log.Printf("Environment: %s", cfg.Environment)
+	log.Printf("Port: %s", cfg.Port)
 
-	if apiKey == "" || apiSecret == "" {
-		log.Fatal("AMADEUS_API_KEY and AMADEUS_API_SECRET must be set")
-	}
+	// Initialize services
+	amadeusService := services.NewAmadeusService(cfg.AmadeusBaseURL, cfg.AmadeusAPIKey, cfg.AmadeusAPISecret)
+	routeOptimizer := services.NewRouteOptimizer(amadeusService)
 
-	// Initialize Amadeus client
-	amadeusClient := &AmadeusClient{
-		APIKey:    apiKey,
-		APISecret: apiSecret,
-		BaseURL:   baseURL,
-	}
+	// Initialize handlers
+	healthHandler := handlers.NewHealthHandler(Version)
+	flightHandler := handlers.NewFlightSearchHandler(routeOptimizer, amadeusService)
 
 	// Create router
 	r := mux.NewRouter()
 
-	// Routes
-	r.HandleFunc("/health", healthCheck).Methods("GET")
-	r.HandleFunc("/api/search", searchFlights(amadeusClient)).Methods("POST")
+	// Health check routes
+	r.HandleFunc("/health", healthHandler.HealthCheck).Methods("GET")
+	r.HandleFunc("/health/ready", healthHandler.ReadinessCheck).Methods("GET")
+	r.HandleFunc("/health/live", healthHandler.LivenessCheck).Methods("GET")
 
-	// CORS
+	// Flight search routes
+	r.HandleFunc("/api/search", flightHandler.SearchFlights).Methods("POST")
+	r.HandleFunc("/api/search/health", flightHandler.HealthCheck).Methods("GET")
+	r.HandleFunc("/api/airports", flightHandler.GetSupportedAirports).Methods("GET")
+
+	// API info route
+	r.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
+		info := map[string]interface{}{
+			"service":     "cheapest-flight-backend",
+			"version":     Version,
+			"environment": cfg.Environment,
+			"endpoints": map[string]string{
+				"health":        "GET /health",
+				"search":        "POST /api/search",
+				"airports":      "GET /api/airports",
+				"search_health": "GET /api/search/health",
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(info)
+	}).Methods("GET")
+
+	// Setup CORS
 	c := cors.New(cors.Options{
-		AllowedOrigins: []string{"http://localhost:3000"},
-		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders: []string{"*"},
+		AllowedOrigins:   cfg.AllowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"*"},
+		AllowCredentials: false,
+		MaxAge:           300, // 5 minutes
 	})
 
 	handler := c.Handler(r)
 
-	fmt.Printf("Server starting on port %s\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, handler))
-}
+	// Setup server
+	server := &http.Server{
+		Addr:         ":" + cfg.Port,
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
 
-func healthCheck(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":  "healthy",
-		"service": "cheapest-flight-backend",
-	})
-}
+	// Setup graceful shutdown
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
-func searchFlights(client *AmadeusClient) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
-		var req FlightSearchRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
+	// Start server in a goroutine
+	go func() {
+		log.Printf("Server starting on port %s", cfg.Port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
 		}
+	}()
 
-		// For now, return mock data
-		// TODO: Implement actual Amadeus API integration
-		response := FlightSearchResponse{
-			Flights: []Flight{
-				{
-					ID:          "mock-1",
-					Origin:      req.Origin,
-					Destination: req.Destination,
-					Date:        req.Date,
-					Price:       299.99,
-					Currency:    "USD",
-					Airline:     "Mock Airlines",
-					Duration:    "5h 30m",
-					Stops:       0,
-					Route:       []string{req.Origin, req.Destination},
-				},
-				{
-					ID:          "mock-2",
-					Origin:      req.Origin,
-					Destination: req.Destination,
-					Date:        req.Date,
-					Price:       189.99,
-					Currency:    "USD",
-					Airline:     "Budget Air",
-					Duration:    "8h 15m",
-					Stops:       1,
-					Route:       []string{req.Origin, "HUB", req.Destination},
-				},
-			},
-			Message: "Mock data - Amadeus integration pending",
+	// Test Amadeus connection on startup
+	go func() {
+		time.Sleep(2 * time.Second) // Give server time to start
+		log.Printf("Testing Amadeus API connection...")
+		if err := amadeusService.HealthCheck(); err != nil {
+			log.Printf("Warning: Amadeus API connection failed: %v", err)
+			log.Printf("The service will continue but flight searches may not work properly")
+		} else {
+			log.Printf("Amadeus API connection successful")
 		}
+	}()
 
-		json.NewEncoder(w).Encode(response)
+	// Wait for interrupt signal
+	<-stop
+	log.Printf("Shutting down server...")
+
+	// Graceful shutdown with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	} else {
+		log.Printf("Server exited gracefully")
 	}
 }
