@@ -1,4 +1,4 @@
-import { FlightSearchRequest, FlightSearchResponse } from "./types";
+import { FlightSearchRequest, FlightSearchResponse, Airport } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -23,9 +23,12 @@ class APIClient {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({
           error: `HTTP ${response.status}: ${response.statusText}`,
+          message: "Request failed",
         }));
         throw new Error(
-          errorData.error || `Request failed with status ${response.status}`
+          errorData.message ||
+            errorData.error ||
+            `Request failed with status ${response.status}`
         );
       }
 
@@ -45,6 +48,15 @@ class APIClient {
       method: "POST",
       body: JSON.stringify(searchData),
     });
+  }
+
+  async getAirports(
+    query?: string
+  ): Promise<{ airports: Airport[]; total: number }> {
+    const queryParam = query ? `?q=${encodeURIComponent(query)}` : "";
+    return this.request<{ airports: Airport[]; total: number }>(
+      `/api/airports${queryParam}`
+    );
   }
 
   async healthCheck(): Promise<{ status: string; service: string }> {

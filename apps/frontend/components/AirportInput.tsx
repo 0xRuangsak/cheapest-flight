@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { Airport } from "@/lib/types";
+import { apiClient } from "@/lib/api";
+import { validateAirportCode, normalizeAirportCode } from "@/lib/utils";
 
 interface AirportInputProps {
   label: string;
@@ -8,84 +11,182 @@ interface AirportInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   required?: boolean;
+  error?: string;
 }
 
 export default function AirportInput({
   label,
   value,
   onChange,
-  placeholder = "Enter airport code",
+  placeholder = "Airport code (e.g., JFK)",
   required = false,
+  error,
 }: AirportInputProps) {
   const [isFocused, setIsFocused] = useState(false);
+  const [suggestions, setSuggestions] = useState<Airport[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedAirport, setSelectedAirport] = useState<Airport | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Popular airports for quick selection
-  const popularAirports = [
-    { code: "BKK", name: "Bangkok - Suvarnabhumi", city: "Bangkok" },
-    { code: "DMK", name: "Bangkok - Don Mueang", city: "Bangkok" },
-    { code: "CNX", name: "Chiang Mai", city: "Chiang Mai" },
-    { code: "HKT", name: "Phuket", city: "Phuket" },
-    { code: "SIN", name: "Singapore - Changi", city: "Singapore" },
-    { code: "KUL", name: "Kuala Lumpur", city: "Kuala Lumpur" },
-    { code: "MNL", name: "Manila", city: "Manila" },
-    { code: "ICN", name: "Seoul - Incheon", city: "Seoul" },
-    { code: "NRT", name: "Tokyo - Narita", city: "Tokyo" },
-    { code: "FRA", name: "Frankfurt", city: "Frankfurt" },
-  ];
+  // Fetch suggestions when user types
+  useEffect(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
 
-  const filteredAirports = popularAirports.filter(
-    (airport) =>
-      airport.code.toLowerCase().includes(value.toLowerCase()) ||
-      airport.name.toLowerCase().includes(value.toLowerCase()) ||
-      airport.city.toLowerCase().includes(value.toLowerCase())
-  );
+    if (value.length >= 1) {
+      timeoutRef.current = setTimeout(async () => {
+        setIsLoading(true);
+        try {
+          const response = await apiClient.getAirports(value);
+          setSuggestions(response.airports.slice(0, 6)); // Limit to 6 suggestions
+        } catch (error) {
+          console.error("Failed to fetch airports:", error);
+          setSuggestions([]);
+        } finally {
+          setIsLoading(false);
+        }
+      }, 300);
+    } else {
+      setSuggestions([]);
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [value]);
+
+  // Find selected airport info
+  useEffect(() => {
+    if (validateAirportCode(value)) {
+      const airport = suggestions.find(
+        (a) => a.iata.toLowerCase() === value.toLowerCase()
+      );
+      setSelectedAirport(airport || null);
+    } else {
+      setSelectedAirport(null);
+    }
+  }, [value, suggestions]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = normalizeAirportCode(e.target.value);
+    onChange(inputValue);
+  };
+
+  const handleSuggestionClick = (airport: Airport) => {
+    onChange(airport.iata);
+    setSelectedAirport(airport);
+    setIsFocused(false);
+    setSuggestions([]);
+  };
+
+  const handleFocus = () => {
+    setIsFocused(true);
+  };
+
+  const handleBlur = () => {
+    // Delay hiding suggestions to allow clicking
+    setTimeout(() => setIsFocused(false), 200);
+  };
+
+  const showSuggestions =
+    isFocused && value.length >= 1 && suggestions.length > 0;
 
   return (
     <div className="relative">
-      <label className="block text-sm font-medium text-gray-700 mb-2">
+      <label className="block text-sm font-semibold text-gray-700 mb-2">
         {label}
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>
 
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value.toUpperCase())}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setTimeout(() => setIsFocused(false), 200)}
-        placeholder={placeholder}
-        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200"
-        maxLength={3}
-        required={required}
-      />
-
-      {/* Dropdown suggestions */}
-      {isFocused && value && filteredAirports.length > 0 && (
-        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-          {filteredAirports.slice(0, 6).map((airport) => (
-            <button
-              key={airport.code}
-              type="button"
-              onClick={() => {
-                onChange(airport.code);
-                setIsFocused(false);
-              }}
-              className="w-full px-4 py-3 text-left hover:bg-gray-50 flex items-center justify-between border-b border-gray-100 last:border-b-0"
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={handleInputChange}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          className={`w-full px-4 py-3 text-lg border-2 rounded-xl focus:outline-none transition-colors ${
+            error
+              ? "border-red-300 focus:border-red-500"
+              : "border-gray-200 focus:border-blue-500"
+          }`}
+          maxLength={3}
+          required={required}
+        />
+        <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+          {isLoading ? (
+            <div className="animate-spin w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+          ) : (
+            <svg
+              className="w-5 h-5 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
             >
-              <div>
-                <div className="font-medium text-gray-900">{airport.code}</div>
-                <div className="text-sm text-gray-500">{airport.name}</div>
-              </div>
-              <div className="text-xs text-gray-400">{airport.city}</div>
-            </button>
-          ))}
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+          )}
+        </div>
+      </div>
+
+      {/* Suggestion dropdown */}
+      {showSuggestions && (
+        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto custom-scrollbar">
+          <div className="p-2 space-y-1">
+            {suggestions.map((airport) => (
+              <button
+                key={airport.iata}
+                type="button"
+                onClick={() => handleSuggestionClick(airport)}
+                className="w-full px-3 py-2 text-left hover:bg-gray-50 rounded-lg transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-medium text-gray-900">
+                      {airport.iata} - {airport.airport}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {airport.region_name}, {airport.country_code}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Show entered code validation */}
-      {value && value.length === 3 && (
-        <div className="mt-1 text-xs text-gray-500">Airport code: {value}</div>
+      {/* Selected airport info */}
+      {selectedAirport && (
+        <p className="mt-1 text-sm text-gray-500">
+          {selectedAirport.airport}, {selectedAirport.region_name}
+        </p>
       )}
+
+      {/* Validation info */}
+      {value && value.length === 3 && !selectedAirport && (
+        <p className="mt-1 text-xs text-gray-500">Airport code: {value}</p>
+      )}
+
+      {/* Error message */}
+      {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
     </div>
   );
 }

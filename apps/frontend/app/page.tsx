@@ -1,36 +1,46 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useFlightSearch } from "@/hooks/useFlightSearch";
+import Header from "@/components/Header";
+import HeroSection from "@/components/HeroSection";
+import SearchForm from "@/components/SearchForm";
+import SearchResults from "@/components/SearchResults";
+import Footer from "@/components/Footer";
 
 export default function Home() {
-  const router = useRouter();
+  const { searchState, lastSearch, searchFlights, clearSearch } =
+    useFlightSearch();
 
-  useEffect(() => {
-    // Redirect to search page
-    router.push("/search");
-  }, [router]);
+  const handleLogoClick = () => {
+    clearSearch();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center">
-      <div className="text-center">
-        <div className="inline-flex items-center space-x-3 mb-4">
-          <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
-            <svg
-              className="w-7 h-7 text-white"
-              fill="currentColor"
-              viewBox="0 0 20 20"
-            >
-              <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-            </svg>
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Cheapest Flight Finder
-          </h1>
-        </div>
-        <p className="text-gray-600 mb-6">Redirecting to search...</p>
-        <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto"></div>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      <Header onLogoClick={handleLogoClick} />
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <HeroSection show={!searchState.hasSearched} />
+
+        <SearchForm
+          onSearch={searchFlights}
+          isLoading={searchState.isLoading}
+        />
+
+        {(searchState.isLoading ||
+          searchState.results ||
+          searchState.error) && (
+          <SearchResults
+            flights={searchState.results || []}
+            isLoading={searchState.isLoading}
+            error={searchState.error}
+            searchQuery={lastSearch || undefined}
+          />
+        )}
+      </main>
+
+      <Footer />
     </div>
   );
 }

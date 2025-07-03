@@ -1,4 +1,15 @@
-// Flight Search Types
+// Airport types
+export interface Airport {
+  country_code: string;
+  region_name: string;
+  iata: string;
+  icao: string;
+  airport: string;
+  latitude: string;
+  longitude: string;
+}
+
+// Flight Search types
 export interface FlightSearchRequest {
   origin: string;
   destination: string;
@@ -17,19 +28,17 @@ export interface Flight {
   duration: string;
   stops: number;
   route: string[];
+  bookingUrl?: string;
 }
 
 export interface FlightSearchResponse {
   flights: Flight[];
   message?: string;
+  total: number;
+  query: FlightSearchRequest;
 }
 
-export interface APIError {
-  error: string;
-  details?: string;
-}
-
-// UI State Types
+// Form types
 export interface SearchFormData {
   origin: string;
   destination: string;
@@ -44,16 +53,17 @@ export interface SearchFormErrors {
   passengers?: string;
 }
 
+// UI State types
 export interface SearchState {
   isLoading: boolean;
   results: Flight[] | null;
   error: string | null;
+  hasSearched: boolean;
 }
 
-// Airport data type (for future autocomplete)
-export interface Airport {
-  code: string;
-  name: string;
-  city: string;
-  country: string;
+// API Response types
+export interface APIError {
+  error: string;
+  message: string;
+  code?: number;
 }
